@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Travel Destinations</title>
+    <style>
+        :root{
+            --bg:#f6f7fb; --card:#fff; --accent:#0077cc; --muted:#6b7280;
+            --maxw:1100px;
+            font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+        }
+        body { margin:0; background:var(--bg); color:#111; display:flex; justify-content:center; padding:32px; }
+        .wrap { width:100%; max-width:var(--maxw); }
+        header { display:flex; gap:16px; align-items:center; margin-bottom:20px; }
+        h1 { margin:0; font-size:20px; }
+        .controls { margin-left:auto; display:flex; gap:8px; align-items:center; }
+        input[type="search"], select {
+            padding:8px 10px; border:1px solid #e5e7eb; border-radius:8px; background:var(--card);
+            font-size:14px; min-width:160px;
+        }
+        .grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap:16px; }
+        .card {
+            background:var(--card); border-radius:12px; overflow:hidden; box-shadow:0 6px 18px rgba(16,24,40,0.06);
+            display:flex; flex-direction:column; cursor:pointer; transition:transform .15s ease;
+        }
+        .card:hover{ transform: translateY(-6px); }
+        .thumb { width:100%; height:140px; object-fit:cover; display:block; }
+        .card-body { padding:12px 14px; display:flex; flex-direction:column; gap:8px; }
+        .title { font-weight:600; font-size:15px; }
+        .meta { color:var(--muted); font-size:14px; display:flex; justify-content:space-between; gap:8px; }
+        .tags { display:flex; gap:6px; flex-wrap:wrap; }
+        .tag { background:#eef2ff; color:#3730a3; padding:4px 8px; border-radius:999px; font-size:12px; }
+        .empty { padding:40px; text-align:center; color:var(--muted); }
+        /* modal */
+        .overlay { position:fixed; inset:0; display:none; justify-content:center; align-items:center; background:rgba(2,6,23,0.5); z-index:40; }
+        .overlay.show { display:flex; }
+        .modal { background:var(--card); border-radius:12px; width:95%; max-width:760px; max-height:90vh; overflow:auto; box-shadow:0 10px 40px rgba(2,6,23,0.3); }
+        .modal img { width:100%; height:300px; object-fit:cover; border-top-left-radius:12px; border-top-right-radius:12px; }
+        .modal .content { padding:16px; }
+        .close { border:0; background:transparent; font-size:18px; cursor:pointer; color:var(--muted); }
+        footer { margin-top:18px; color:var(--muted); font-size:13px; text-align:center; }
+        @media (max-width:520px){ .thumb{ height:120px } .modal img{ height:220px } }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <h1>Travel Destinations</h1>
+            <div class="controls">
+                <input id="search" type="search" placeholder="Search destinations..." aria-label="Search destinations">
+                <select id="filter">
+                    <option value="">All regions</option>
+                    <option>Europe</option>
+                    <option>Asia</option>
+                    <option>Americas</option>
+                    <option>Africa</option>
+                    <option>Oceania</option>
+                </select>
+            </div>
+        </header>
+
+        <main>
+            <div id="grid" class="grid" aria-live="polite"></div>
+            <div id="empty" class="empty" style="display:none">No destinations found.</div>
+        </main>
+
+        <footer>Click a card for details. Images from picsum.photos (placeholders).</footer>
+    </div>
+
+    <div id="overlay" class="overlay" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal" role="document">
+            <button id="close" class="close" aria-label="Close">✕</button>
+            <img id="modal-img" alt="">
+            <div class="content">
+                <h2 id="modal-title"></h2>
+                <p id="modal-region" style="color:var(--muted); margin-top:6px;"></p>
+                <p id="modal-desc" style="margin-top:12px; line-height:1.5;"></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Data - replace or extend with your destinations
+        const destinations = [
+            { id:1, name:"Paris", region:"Europe", description:"City of light, art, cuisine and iconic landmarks.", img: "https://picsum.photos/seed/paris/800/600" },
+            { id:2, name:"Kyoto", region:"Asia", description:"Historic temples, gardens, and traditional tea houses.", img: "https://picsum.photos/seed/kyoto/800/600" },
+            { id:3, name:"Maui", region:"Oceania", description:"Beaches, volcanic landscapes and Hawaiian culture.", img: "https://picsum.photos/seed/maui/800/600" },
+            { id:4, name:"New York", region:"Americas", description:"Skyscrapers, museums and diverse neighborhoods.", img: "https://picsum.photos/seed/nyc/800/600" },
+            { id:5, name:"Cape Town", region:"Africa", description:"Coastal city with mountains, vineyards and wildlife.", img: "https://picsum.photos/seed/capetown/800/600" },
+            { id:6, name:"Rome", region:"Europe", description:"Ancient ruins, piazzas and world-class cuisine.", img: "https://picsum.photos/seed/rome/800/600" },
+            { id:7, name:"Bali", region:"Asia", description:"Beaches, rice terraces, and vibrant island life.", img: "https://picsum.photos/seed/bali/800/600" }
+        ];
+
+        const grid = document.getElementById('grid');
+        const search = document.getElementById('search');
+        const filter = document.getElementById('filter');
+        const empty = document.getElementById('empty');
+        const overlay = document.getElementById('overlay');
+        const modalImg = document.getElementById('modal-img');
+        const modalTitle = document.getElementById('modal-title');
+        const modalRegion = document.getElementById('modal-region');
+        const modalDesc = document.getElementById('modal-desc');
+        const closeBtn = document.getElementById('close');
+
+        function renderList(list){
+            grid.innerHTML = '';
+            if(!list.length){
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+            list.forEach(d => {
+                const card = document.createElement('article');
+                card.className = 'card';
+                card.tabIndex = 0;
+                card.innerHTML = `
+                    <img class="thumb" src="${d.img}" alt="${d.name}">
+                    <div class="card-body">
+                        <div class="title">${d.name}</div>
+                        <div class="meta"><div>${d.region}</div><div class="tags"><span class="tag">Popular</span></div></div>
+                    </div>
+                `;
+                card.addEventListener('click', ()=> openModal(d));
+                card.addEventListener('keypress', (e)=> { if(e.key === 'Enter') openModal(d); });
+                grid.appendChild(card);
+            });
+        }
+
+        function openModal(d){
+            modalImg.src = d.img;
+            modalImg.alt = d.name;
+            modalTitle.textContent = d.name;
+            modalRegion.textContent = d.region;
+            modalDesc.textContent = d.description;
+            overlay.classList.add('show');
+            overlay.setAttribute('aria-hidden','false');
+            closeBtn.focus();
+        }
+
+        function closeModal(){
+            overlay.classList.remove('show');
+            overlay.setAttribute('aria-hidden','true');
+        }
+
+        // filter logic
+        function applyFilters(){
+            const q = search.value.trim().toLowerCase();
+            const region = filter.value;
+            const filtered = destinations.filter(d=>{
+                const matchesQ = !q || d.name.toLowerCase().includes(q) || d.description.toLowerCase().includes(q);
+                const matchesRegion = !region || d.region === region;
+                return matchesQ && matchesRegion;
+            });
+            renderList(filtered);
+        }
+
+        // events
+        search.addEventListener('input', debounce(applyFilters, 200));
+        filter.addEventListener('change', applyFilters);
+        closeBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', (e)=> { if(e.target === overlay) closeModal(); });
+        document.addEventListener('keydown', (e)=> { if(e.key === 'Escape') closeModal(); });
+
+        // simple debounce
+        function debounce(fn, ms){
+            let t;
+            return (...args)=> { clearTimeout(t); t = setTimeout(()=> fn(...args), ms); };
+        }
+
+        // init
+        renderList(destinations);
+    </script>
+</body>
+</html>
